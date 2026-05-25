@@ -1,0 +1,170 @@
+trigger:
+  branches:
+    include:
+      - main
+      - feature/*
+      - cicd-demo
+
+variables:
+  ACR_NAME: mytask
+  IMAGE_NAME: flask-app
+
+stages:
+
+# ================= BUILD =================
+- stage: Build
+  displayName: CI - Build & Push Image
+
+  jobs:
+  - job: Build
+    pool:
+      vmImage: ubuntu-latest
+
+    steps:
+
+    - checkout: self
+      fetchDepth: 0
+
+    - task: UsePythonVersion@0
+      displayName: Use Python 3.11
+      inputs:
+        versionSpec: '3.11'
+
+    # ================= INSTALL =================
+    - bash: |
+        set -e
+
+        python -m pip install --upgrade pip
+
+        if [ -f requirements.txt ]; then
+          pip install -r requirements.txt
+        fi
+
+        pip install pytest
+      displayName: Install Dependencies
+
+    # ================= SYNTAX CHECK =================
+    - bash: |
+        set -e
+        python -m compileall .
+      displayName: Syntax Check
+
+    # ================= TESTS =================
+    - bash: |
+        set -e
+
+        if find . -type f -name "test_*.py" | grep -q .; then
+          pytest
+        else
+          echo "No tests found"
+        fi
+      displayName: Run Tests
+
+    # ================= GENERATE IMAGE TAG =================
+    - bash: |
+        set -e
+
+        GIT_SHA=$(git rev-parse --short HEAD)
+        BUILD_ID=$BUILD_BUILDID
+
+        FULL_IMAGE="${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${GIT_SHA}-${BUILD_ID}"
+
+        echo "FULL_IMAGE=$FULL_IMAGE"
+
+        echo "##vso[task.setvariable variable=FULL_IMAGE;isOutput=true]$FULL_IMAGE"
+      name: setTag
+      displayName: Generate Image Tag
+      env:
+        ACR_NAME: $(ACR_NAME)
+        IMAGE_NAME: $(IMAGE_NAME)
+
+    # ================= BUILD & PUSH =================
+    - task: AzureCLI@2
+      displayName: Build & Push to ACR
+      inputs:
+        azureSubscription: 'aks-connection'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -e
+
+          az acr login --name $(ACR_NAME)
+
+          echo "Building image: $(setTag.FULL_IMAGE)"
+
+          docker build -t $(setTag.FULL_IMAGE) .
+          docker push $(setTag.FULL_IMAGE)
+
+# ================= DEPLOY =================
+- stage: Deploy
+  displayName: CD - Deploy to AKS
+  dependsOn: Build
+
+  variables:
+    FULL_IMAGE: $[ stageDependencies.Build.Build.outputs['setTag.FULL_IMAGE'] ]
+
+  jobs:
+  - job: Deploy
+    pool:
+      vmImage: ubuntu-latest
+
+    steps:
+
+    - task: KubectlInstaller@0
+      inputs:
+        kubectlVersion: latest
+
+    # ================= GET AKS CREDS =================
+    - task: AzureCLI@2
+      displayName: Get AKS Credentials
+      inputs:
+        azureSubscription: 'aks-connection'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          az aks get-credentials \
+            --resource-group FA \
+            --name AKS1 \
+            --overwrite-existing
+
+    # ================= DEPLOY =================
+    - task: AzureCLI@2
+      displayName: Deploy to AKS
+      inputs:
+        azureSubscription: 'aks-connection'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -e
+
+          echo "Deploying image: $FULL_IMAGE"
+
+          if [ -z "$FULL_IMAGE" ]; then
+            echo "ERROR: FULL_IMAGE is empty"
+            exit 1
+          fi
+
+          kubectl set image deployment/flaskapp \
+            flaskapp=$FULL_IMAGE \
+            --record
+      env:
+        FULL_IMAGE: $(FULL_IMAGE)
+
+    # ================= VERIFY ROLLOUT =================
+    - bash: |
+        set -e
+
+        echo "Verifying rollout..."
+
+        if ! kubectl rollout status deployment/flaskapp --timeout=900s; then
+          echo "FAILED → Rolling back"
+          kubectl rollout undo deployment/flaskapp
+          kubectl rollout status deployment/flaskapp --timeout=300s
+          exit 1
+        fi
+      displayName: Auto rollback on failure
+
+    # ================= VERIFY =================
+    - bash: |
+        kubectl get pods -o wide
+      displayName: Verify Deployment
