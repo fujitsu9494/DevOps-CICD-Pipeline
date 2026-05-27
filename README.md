@@ -159,3 +159,11 @@ If deployment times out:
 ### Syntax Errors
 
 The pipeline will fail at the syntax check stage if there are Python syntax errors. Fix the errors and push again.
+
+### Build Stage Failed
+<img width="1238" height="1042" alt="Azurepipelinefailed_1" src="https://github.com/user-attachments/assets/8813ec9d-6f66-4a54-bb0a-2f936bfd2b64" />
+
+### Build and Deploy Stage Passed
+<img width="1234" height="838" alt="Azurepipelinepassed_1" src="https://github.com/user-attachments/assets/8caec23f-8587-4988-a8eb-d015b08b496c" />
+
+<img width="1230" height="1036" alt="Azurepipelinepassed_2" src="https://github.com/user-attachments/assets/6599a952-f91b-4223-afd7-92f230d4a40c" />
