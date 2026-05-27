@@ -56,8 +56,7 @@ python flask_app.py
 
 The pipeline triggers on:
 - `main`
-- `feature/*`
-- `cicd-demo`
+- `cicd-demo/*`
 
 ## Deployment
 
@@ -88,6 +87,57 @@ kubectl set image deployment/flaskapp flaskapp=mytask.azurecr.io/flask-app:lates
 - **Azure DevOps**: CI/CD pipeline
 - **AKS**: Container orchestration
 - **ACR**: Container registry
+
+# CI/CD Architecture Diagram
+
+## Mermaid Diagram (for visualization tools)
+
+```mermaid
+graph TD
+    A[Developer] -->|git push| B[Azure Repos Git]
+    B -->|Trigger| C[Azure DevOps Pipeline]
+    
+    C --> D[Build Stage]
+    D --> D1[Syntax Check]
+    D --> D2[Run Tests]
+    D --> D3[Build Docker Image]
+    D --> D4[Push to ACR]
+    
+    D4 --> E[Azure Container Registry ACR]
+    
+    C --> F[Deploy Stage]
+    F --> F1[Get AKS Credentials]
+    F --> F2[Deploy to AKS]
+    F --> F3[Auto-rollback on Failure]
+    F --> F4[Verify Deployment]
+    
+    F2 --> G[Azure Kubernetes Service AKS]
+    
+    G --> H[Deployment: 3 Replicas]
+    H --> I[Pod 1]
+    H --> J[Pod 2]
+    H --> K[Pod 3]
+    
+    I --> L[Load Balancer Service]
+    J --> L
+    K --> L
+    
+    L --> M[Live Web Application]
+    
+    style A fill:#e1f5ff
+    style B fill:#fff4e1
+    style C fill:#e8f5e9
+    style E fill:#ffe1e1
+    style G fill:#f3e5f5
+    style L fill:#fff9c4
+    style M fill:#e1ffe1
+```
+KEY FEATURES:
+- Syntax Check: Catches errors before build
+- Auto-rollback: Reverts failed deployments
+- 3 Replicas: High availability
+- Load Balancer: External access
+- Automated CI/CD: Git push triggers pipeline
 
 ## Pipeline Features
 
